@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trainings-Tracker mit Progression</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 20px; }
+        h1, h2 { color: #333; }
+        form { margin-bottom: 20px; }
+        input, button { margin: 5px 0; padding: 5px; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        ul { list-style-type: none; padding: 0; }
+        li { background-color: #f4f4f4; margin: 5px 0; padding: 10px; border-radius: 5px; position: relative; }
+        li button { position: absolute; right: 10px; top: 10px; background-color: #e74c3c; color: white; border: none; cursor: pointer; }
+        li button:hover { background-color: #c0392b; }
+        #chartContainer { max-width: 600px; margin-top: 20px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Trainings-Tracker mit Progression</h1>
+
+    <form id="exerciseForm">
+        <h2>Neue Übung hinzufügen</h2>
+        <input type="text" id="exerciseName" placeholder="Übungsname" required>
+        <input type="number" id="sets" placeholder="Anzahl Sätze" required>
+        <input type="number" id="reps" placeholder="Wiederholungen" required>
+        <input type="number" id="weight" placeholder="Gewicht (kg)" required step="2.5">
+        <button type="submit">Hinzufügen</button>
+        <div class="error" id="error"></div>
+    </form>
+
+    <h2>Trainingslog</h2>
+    <ul id="exerciseList"></ul>
+
+    <div id="chartContainer">
+        <canvas id="volumeChart"></canvas>
+    </div>
+
+    <script>
+        let exercises = JSON.parse(localStorage.getItem('exercises')) || [];
+        const form = document.getElementById('exerciseForm');
+        const list = document.getElementById('exerciseList');
+        const errorDiv = document.getElementById('error');
+        let chart;
+
+        function roundTo2_5(num) {
+            return Math.round(num / 2.5) * 2.5;
+        }
+
+        function validateForm() {
+            const name = document.getElementById('exerciseName').value;
+            const sets = document.getElementById('sets').value;
+            const reps = document.getElementById('reps').value;
+            const weight = document.getElementById('weight').value;
+            errorDiv.textContent = '';
+
+            if (!name || sets <= 0 || reps <= 0 || weight <= 0) {
+                errorDiv.textContent = 'Bitte alle Felder korrekt ausfüllen.';
+                return false;
+            }
+            return true;
+        }
+
+        function addExercise(e) {
+            e.preventDefault();
+            if (!validateForm()) return;
+
+            const newExercise = {
+                name: document.getElementById('exerciseName').value,
+                sets: parseInt(document.getElementById('sets').value),
+                reps: parseInt(document.getElementById('reps').value),
+                weight: parseFloat(document.getElementById('weight').value),
+                date: new Date().toISOString()
+            };
+
+            const prevExercise = exercises.filter(ex => ex.name === newExercise.name).pop();
+
+            if (prevExercise) {
+                const prevVolume = calculateVolume(prevExercise);
+                const newVolume = calculateVolume(newExercise);
+
+                if (newVolume > prevVolume) {
+                    newExercise.nextWeight = roundTo2_5(newExercise.weight + 2.5);
+                } else {
+                    newExercise.nextWeight = newExercise.weight;
+                }
+            } else {
+                newExercise.nextWeight = roundTo2_5(newExercise.weight + 2.5);
+            }
+
+            exercises.push(newExercise);
+            localStorage.setItem('exercises', JSON.stringify(exercises));
+            form.reset();
+            updateExerciseList();
+            updateChart();
+        }
+
+        function deleteExercise(index) {
+            exercises.splice(index, 1);
+            localStorage.setItem('exercises', JSON.stringify(exercises));
+            updateExerciseList();
+            updateChart();
+        }
+
+        function updateExerciseList() {
+            list.innerHTML = '';
+            exercises.forEach((exercise, index) => {
+                const li = document.createElement('li');
+                li.textContent = `${new Date(exercise.date).toLocaleDateString()}: ${exercise.name} - ${exercise.sets} Sätze x ${exercise.reps} Wdh x ${exercise.weight} kg`;
+                if (exercise.nextWeight) {
+                    li.textContent += ` (Nächstes Mal: ${exercise.nextWeight} kg)`;
+                }
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = 'Löschen';
+                deleteBtn.onclick = () => deleteExercise(index);
+                li.appendChild(deleteBtn);
+
+                list.appendChild(li);
+            });
+        }
+
+        function calculateVolume(exercise) {
+            return exercise.sets * exercise.reps * exercise.weight;
+        }
+
+        function updateChart() {
+            const ctx = document.getElementById('volumeChart').getContext('2d');
+            const volumeData = exercises.map(exercise => ({
+                x: new Date(exercise.date),
+                y: calculateVolume(exercise)
+            }));
+
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Trainingsvolumen über Zeit',
+                        data: volumeData,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'day'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Volumen (Sätze x Wdh x Gewicht)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        form.addEventListener('submit', addExercise);
+        updateExerciseList();
+        updateChart();
+    </script>
+</body>
+</html>
